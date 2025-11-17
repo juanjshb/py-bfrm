@@ -1,221 +1,271 @@
-# [file name]: detector.py
-# [file content begin]
+# detector.py
 import hashlib
-import numpy as np
-import pandas as pd
-from sklearn.ensemble import IsolationForest
 from datetime import datetime, timedelta
-import json
-import os
-import requests
+from typing import Dict, Any, Optional, List
+
 import logging
-from typing import Dict, Any, Optional
+import requests
 
-# ... (Configuración de logging, Cache y Entrenamiento del Modelo sin cambios) ...
 logger = logging.getLogger(__name__)
-_TASAS_CACHE = {
-    'tasas': None,
-    'timestamp': None,
-    'timeout_minutes': 30
+
+# Cache sencillo en memoria para tasas
+_TASAS_CACHE: Dict[str, Any] = {
+    "tasas": None,
+    "timestamp": None,
 }
-np.random.seed(42)
-base = pd.DataFrame({
-    "monto": np.concatenate([
-        np.random.normal(3000, 800, 400),
-        np.random.normal(15000, 5000, 50),
-        np.random.normal(100, 50, 50)
-    ]).clip(1, 50000),
-    "hora": np.concatenate([
-        np.random.normal(14, 4, 400).clip(0, 23).astype(int),
-        np.random.randint(0, 6, 50),
-        np.random.randint(22, 24, 50)
-    ])
-})
-model = IsolationForest(contamination=0.03, random_state=42)
-model.fit(base[["monto","hora"]])
-LOG_PATH = "auditoria/alertas.json"
-os.makedirs("auditoria", exist_ok=True)
 
-# ... (obtener_tasas_cambio y convertir_a_dop sin cambios) ...
+# Puedes parametrizar esto si quieres
+BHD_TASAS_URL = "https://www.bhd.com.do"  # placeholder demo
 
-def analizar_riesgo(
-    monto_dop: float, 
-    hora: int, 
-    pais: str, 
-    moneda_original: str,
-    mcc_info: Optional[Dict[str, Any]] = None,
-    mid_info: Optional[Dict[str, Any]] = None,
-    client_profile: Optional[Dict[str, Any]] = None
-) -> Dict[str, Any]:
-    """
-    Analiza múltiples factores de riesgo, incluyendo historial del cliente y reglas de comercio.
-    """
-    factores_riesgo = []
-    score_riesgo = 0
-    
-    # --- 1. REGLAS DE COMERCIO (MCC y MID) ---
-    if mcc_info:
-        mcc_risk = mcc_info.get('risk_level', 'medium')
-        if mcc_risk == 'blocked':
-            factores_riesgo.append("MCC_BLOQUEADO")
-            score_riesgo += 10 # Penalización muy alta
-        elif mcc_risk == 'high':
-            factores_riesgo.append("MCC_ALTO_RIESGO")
-            score_riesgo += 3
-            
-    if mid_info:
-        mid_status = mid_info.get('status', 'watch')
-        if mid_status == 'denied':
-            factores_riesgo.append("COMERCIO_BLOQUEADO")
-            score_riesgo += 10 # Penalización muy alta
-        elif mid_status == 'allowed':
-            factores_riesgo.append("COMERCIO_CONFIABLE")
-            score_riesgo -= 2 # Reduce el riesgo
-            
-    # --- 2. REGLAS GENERALES (Monto, Hora, País) ---
-    if monto_dop > 10000:
-        factores_riesgo.append("MONTO_ELEVADO")
-        score_riesgo += 2
-    elif monto_dop < 50:
-        factores_riesgo.append("MONTO_MUY_BAJO")
-        score_riesgo += 1
-    
-    if 0 <= hora <= 6:
-        factores_riesgo.append("HORARIO_NOCTURNO")
-        score_riesgo += 1
-    
-    paises_alto_riesgo = ["VE", "HT"]
-    if pais in paises_alto_riesgo:
-        factores_riesgo.append("PAIS_ALTO_RIESGO")
-        score_riesgo += 2
-    
-    if moneda_original != "DOP":
-        factores_riesgo.append("TRANSACCION_DIVISA")
-        score_riesgo += 1
 
-    # --- 3. REGLAS DE HISTORIAL DEL CLIENTE ---
-    if client_profile:
-        avg_amount = client_profile.get('avg_amount_dop', 0)
-        countries = client_profile.get('countries_used', [])
-        
-        # Monto inusual para el cliente
-        if avg_amount > 0 and monto_dop > (avg_amount * 5):
-            factores_riesgo.append("MONTO_INUSUAL_CLIENTE")
-            score_riesgo += 3
-        
-        # Primera transacción en un país nuevo
-        if pais not in countries and pais != "DO":
-            factores_riesgo.append("PAIS_NUEVO_CLIENTE")
-            score_riesgo += 2
-        
-        # Transacciones muy rápidas (frecuencia)
-        tx_count_last_hour = client_profile.get('tx_count_last_hour', 0)
-        if tx_count_last_hour > 5:
-            factores_riesgo.append("ALTA_FRECUENCIA_CLIENTE")
-            score_riesgo += 3
+def hash_cliente(customer_ref_id: Optional[str]) -> Optional[str]:
+    if not customer_ref_id:
+        return None
+    return hashlib.sha256(customer_ref_id.encode("utf-8")).hexdigest()
 
-    # --- 4. REGLAS COMBINADAS ---
-    if monto_dop > 8000 and (hora <= 6 or hora >= 22):
-        factores_riesgo.append("MONTO_ALTO_HORARIO_SOSPECHOSO")
-        score_riesgo += 2
-    
-    # Asegurar que el score no sea negativo
-    score_riesgo = max(0, score_riesgo)
-    
+
+def _tasas_por_defecto() -> Dict[str, float]:
     return {
-        "factores_riesgo": list(set(factores_riesgo)), # Eliminar duplicados
-        "score_riesgo": score_riesgo,
-        "nivel_riesgo": "ALTO" if score_riesgo >= 5 else "MEDIO" if score_riesgo >= 1 else "BAJO"
+        "USD_venta": 59.5,
+        "USD_compra": 58.5,
+        "EUR_venta": 65.0,
+        "EUR_compra": 64.0,
     }
 
-def detectar_fraude(
-    cliente_id: str, 
-    monto: float, 
-    moneda: str, 
-    hora: int, 
-    pais: str,
-    # Nuevos parámetros contextuales
-    mcc_info: Optional[Dict[str, Any]] = None,
-    mid_info: Optional[Dict[str, Any]] = None,
-    client_profile: Optional[Dict[str, Any]] = None
-) -> dict:
-    """
-    Detecta fraude con contexto de cliente y comercio.
-    """
-    tasas = obtener_tasas_cambio()
-    conversion_info = convertir_a_dop(monto, moneda, tasas)
-    monto_dop = conversion_info["monto_dop"]
-    
-    cliente_hash = hashlib.sha256(cliente_id.encode()).hexdigest()[:16]
 
-    # Predecir con modelo ML (Análisis de Anomalía General)
-    features = pd.DataFrame([[monto_dop, hora]], columns=["monto","hora"])
-    pred_ml = model.predict(features)[0]  # -1 = anomalía
-    score_ml = model.decision_function(features)[0]
-    probabilidad_fraude_ml = max(0, min(1, (0.5 - score_ml) * 2))
-    
-    # Análisis de riesgo detallado (Reglas de Negocio + Contexto)
-    analisis_riesgo = analizar_riesgo(
-        monto_dop, hora, pais, moneda, 
-        mcc_info, mid_info, client_profile
-    )
-    
-    # Determinar si es fraude basado en ML y reglas
-    es_fraude_ml = pred_ml == -1
-    es_fraude_reglas = analisis_riesgo["nivel_riesgo"] == "ALTO"
-    
-    es_fraude = es_fraude_ml or es_fraude_reglas
-    
-    # Mensaje descriptivo
-    if es_fraude:
-        if es_fraude_ml and es_fraude_reglas:
-            mensaje = "ALERTA: Patrón anómalo (ML) y múltiples factores de riesgo (Reglas) detectados"
-        elif es_fraude_ml:
-            mensaje = "ALERTA: Patrón anómalo detectado por modelo de Machine Learning"
-        else:
-            mensaje = "ALERTA: Múltiples factores de riesgo identificados por reglas de negocio"
-    else:
-        mensaje = "Transacción dentro de parámetros normales"
-    
-    # Recomendación
-    if es_fraude:
-        recomendacion = "Recomendación: Revisar transacción manualmente y contactar al cliente"
-    elif analisis_riesgo["nivel_riesgo"] == "MEDIO":
-        recomendacion = "Recomendación: Monitorear transacción"
-    else:
-        recomendacion = "Recomendación: Transacción aprobada automáticamente"
+def _fetch_tasas_bhd() -> Dict[str, float]:
+    """
+    Placeholder: aquí puedes integrar el scraping / API real del BHD.
+    Si falla, devolvemos tasas por defecto.
+    """
+    try:
+        # TODO: implementar lógica real. Por ahora devolvemos default.
+        return _tasas_por_defecto()
+    except Exception as e:
+        logger.warning(f"No se pudieron obtener tasas del BHD: {e}")
+        return _tasas_por_defecto()
 
-    resultado = {
-        "cliente_hash": cliente_hash,
-        "pais": pais,
-        "monto_original": float(monto),
+
+def obtener_tasas_cambio() -> Dict[str, float]:
+    """Obtiene tasas de cambio con cache de 30 minutos"""
+    ahora = datetime.utcnow()
+    if _TASAS_CACHE["tasas"] and _TASAS_CACHE["timestamp"]:
+        delta = ahora - _TASAS_CACHE["timestamp"]
+        if delta.total_seconds() < 30 * 60:
+            return _TASAS_CACHE["tasas"]
+
+    tasas = _fetch_tasas_bhd()
+    _TASAS_CACHE["tasas"] = tasas
+    _TASAS_CACHE["timestamp"] = ahora
+    return tasas
+
+
+def convertir_a_dop(monto: float, moneda: str, tasas: Dict[str, float]) -> Dict[str, Any]:
+    """
+    Convierte montos de USD/EUR a DOP. Si ya es DOP, devuelve igual.
+    """
+    moneda = moneda.upper()
+    if moneda == "DOP":
+        return {
+            "monto_original": monto,
+            "moneda_original": moneda,
+            "monto_dop": monto,
+            "tasa_aplicada": 1.0,
+            "tipo_tasa": "n/a",
+            "descripcion": "Monto ya en DOP",
+            "conversion_requerida": False,
+        }
+
+    key = f"{moneda}_venta"
+    tasa = tasas.get(key)
+    if not tasa:
+        # Fallback duro
+        logger.warning(f"No se encontró tasa para {moneda}, usando fallback 1:1")
+        tasa = 1.0
+
+    monto_dop = monto * tasa
+    return {
+        "monto_original": monto,
         "moneda_original": moneda,
         "monto_dop": float(monto_dop),
-        "hora": hora,
-        "es_fraude": bool(es_fraude),
-        "probabilidad_fraude": round(float(probabilidad_fraude_ml), 4), # Basado en ML
-        "score_anomalia": float(score_ml),
-        "analisis_riesgo": analisis_riesgo, # Resultado de las reglas
-        "mensaje": mensaje,
-        "recomendacion": recomendacion,
-        "timestamp": datetime.utcnow().isoformat(),
-        "conversion_moneda": conversion_info,
-        "tasas_actualizadas": tasas.get('actualizado', ''),
-        "datos_recibidos": {
-            "cliente_id_length": len(cliente_id),
-            "monto_original": float(monto),
-            "moneda_original": moneda,
-            "hora_transaccion": hora,
-            "pais_origen": pais,
-            "mcc": mcc_info.get('mcc') if mcc_info else None,
-            "mid": mid_info.get('mid') if mid_info else None
-        }
+        "tasa_aplicada": float(tasa),
+        "tipo_tasa": "venta",
+        "descripcion": f"{moneda} → DOP (tasa venta: {tasa})",
+        "conversion_requerida": True,
     }
 
-    if resultado["es_fraude"]:
-        _registrar_alerta(resultado)
-    
-    return resultado
 
-# ... (_registrar_alerta, obtener_estado_tasas, cerrar_modelo sin cambios) ...
-# [file content end]
+# ------------------------
+# Reglas de negocio
+# ------------------------
+
+PAISES_ALTO_RIESGO = {"VE", "HT"}
+PAISES_MEDIO_RIESGO = set()  # puedes llenarlo luego
+
+
+def _extraer_pais_desde_name_loc(name_loc: Optional[str]) -> Optional[str]:
+    """
+    Heurística básica: toma el último token después de una coma y lo usa como país (ej. 'VE', 'DO', etc.)
+    """
+    if not name_loc:
+        return None
+    partes = [p.strip() for p in name_loc.split(",") if p.strip()]
+    if not partes:
+        return None
+    ultimo = partes[-1]
+    if len(ultimo) in (2, 3):
+        return ultimo.upper()
+    return None
+
+
+def calcular_factores_basicos(monto_dop: float, moneda: str, hora_tx: int, name_loc: Optional[str]) -> List[str]:
+    factores: List[str] = []
+    pais = _extraer_pais_desde_name_loc(name_loc)
+
+    # Montos
+    if monto_dop > 10000:
+        factores.append("MONTO_ELEVADO")
+    if monto_dop < 50:
+        factores.append("MONTO_MUY_BAJO")
+
+    # Horario
+    if 0 <= hora_tx < 6:
+        factores.append("HORARIO_NOCTURNO")
+
+    # País
+    if pais in PAISES_ALTO_RIESGO:
+        factores.append("PAIS_ALTO_RIESGO")
+    elif pais and pais not in {"DO", "US"}:
+        factores.append("PAIS_RIESGO_MEDIO")
+
+    # Divisa
+    if moneda in {"USD", "EUR"}:
+        factores.append("TRANSACCION_DIVISA")
+        if monto_dop > 15000:
+            factores.append("DIVISA_MONTO_ELEVADO")
+        if "MONTO_ELEVADO" in factores and "HORARIO_NOCTURNO" in factores:
+            factores.append("MONTO_ALTO_HORARIO_SOSPECHOSO")
+
+    return factores
+
+
+def calcular_factores_historial(hist: Dict[str, Any]) -> List[str]:
+    """
+    hist = {
+      'tx_24h': int,
+      'tx_7d': int,
+      'monto_promedio_30d': float | None,
+      'monto_dop_actual': float
+    }
+    """
+    factores: List[str] = []
+
+    tx_24h = hist.get("tx_24h") or 0
+    tx_7d = hist.get("tx_7d") or 0
+    promedio_30d = hist.get("monto_promedio_30d")
+    monto_actual = hist.get("monto_dop_actual") or 0.0
+
+    if tx_24h >= 5:
+        factores.append("FRECUENCIA_ALTA_24H")
+    if tx_7d >= 20:
+        factores.append("FRECUENCIA_ALTA_7D")
+
+    if promedio_30d and promedio_30d > 0:
+        if monto_actual > promedio_30d * 3:
+            factores.append("DESVIO_MONTO_ALTO")
+        elif monto_actual < promedio_30d * 0.3:
+            factores.append("DESVIO_MONTO_BAJO")
+
+    return factores
+
+
+def calcular_factores_merchant(merchant_ctx: Dict[str, Any]) -> List[str]:
+    factores: List[str] = []
+    if merchant_ctx.get("merchant_permitido") is False:
+        factores.append("MERCHANT_NO_PERMITIDO")
+    if merchant_ctx.get("mcc_permitido") is False:
+        factores.append("MCC_NO_PERMITIDO")
+    if merchant_ctx.get("riesgo_merchant") == "ALTO":
+        factores.append("MERCHANT_ALTO_RIESGO")
+    if merchant_ctx.get("riesgo_mcc") == "ALTO":
+        factores.append("MCC_ALTO_RIESGO")
+    return factores
+
+
+def analizar_riesgo(
+    monto_dop: float,
+    moneda_original: str,
+    hora_tx: int,
+    name_loc: Optional[str],
+    hist_ctx: Dict[str, Any],
+    merchant_ctx: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Devuelve un dict con:
+      - fraude_detectado
+      - probabilidad_fraude
+      - nivel_riesgo
+      - factores_riesgo
+      - mensaje
+      - recomendacion
+      - score_anomalia (placeholder por ahora)
+    """
+
+    factores = []
+    factores += calcular_factores_basicos(monto_dop, moneda_original, hora_tx, name_loc)
+    factores += calcular_factores_historial(hist_ctx)
+    factores += calcular_factores_merchant(merchant_ctx)
+
+    # scoring simple por ahora (cada factor suma 1)
+    riesgo_score = len(factores)
+
+    # Merchant / MCC no permitido + países alto riesgo pesan más
+    if "MERCHANT_NO_PERMITIDO" in factores or "MCC_NO_PERMITIDO" in factores:
+        riesgo_score += 2
+    if "PAIS_ALTO_RIESGO" in factores:
+        riesgo_score += 2
+
+    if riesgo_score >= 7:
+        nivel = "ALTO"
+        fraude = True
+        prob = min(0.9, 0.5 + 0.05 * riesgo_score)
+        mensaje = "ALERTA: Transacción identificada como de ALTO RIESGO"
+        recomendacion = "Revisar manualmente y contactar al cliente"
+    elif riesgo_score >= 3:
+        nivel = "MEDIO"
+        fraude = False
+        prob = min(0.7, 0.2 + 0.05 * riesgo_score)
+        mensaje = "Transacción con factores de riesgo moderados"
+        recomendacion = "Evaluar según políticas internas o monitorear"
+    else:
+        nivel = "BAJO"
+        fraude = False
+        prob = 0.1 + 0.05 * riesgo_score
+        mensaje = "Transacción dentro de parámetros normales"
+        recomendacion = "Transacción aprobada automáticamente"
+
+    return {
+        "fraude_detectado": fraude,
+        "probabilidad_fraude": round(prob, 4),
+        "nivel_riesgo": nivel,
+        "factores_riesgo": factores,
+        "mensaje": mensaje,
+        "recomendacion": recomendacion,
+        "score_anomalia": -float(riesgo_score),  # placeholder
+    }
+
+
+def obtener_estado_tasas() -> Dict[str, Any]:
+    tasas = obtener_tasas_cambio()
+    return {
+        "tasas_actuales": tasas,
+        "cache_actualizado": _TASAS_CACHE["timestamp"].isoformat()
+        if _TASAS_CACHE["timestamp"]
+        else None,
+        "estado": "activo" if tasas else "error",
+    }
+
+
+def cerrar_modelo():
+    _TASAS_CACHE["tasas"] = None
+    _TASAS_CACHE["timestamp"] = None
