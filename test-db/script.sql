@@ -1,5 +1,7 @@
 -- Borrar tablas si ya existen (para pruebas limpias)
 DROP TABLE IF EXISTS ctransactions;
+DROP TABLE IF EXISTS cmerchants;
+DROP TABLE IF EXISTS cmcc;
 DROP TABLE IF EXISTS ccardx;
 DROP TABLE IF EXISTS caccounts;
 DROP TABLE IF EXISTS ccustomers;
@@ -62,6 +64,31 @@ CREATE TABLE ccardx (
 );
 CREATE INDEX idx_ccardx_pan ON ccardx(pan);
 CREATE INDEX idx_ccardx_pan_bin ON ccardx(pan_bin);
+
+-- Tabla de códigos MCC
+CREATE TABLE cmcc (
+    id SERIAL PRIMARY KEY,
+    mcc VARCHAR(4) UNIQUE NOT NULL,
+    descripcion VARCHAR(255) NOT NULL,
+    riesgo_nivel VARCHAR(10) DEFAULT 'MEDIO',  -- BAJO/MEDIO/ALTO
+    permitido BOOLEAN DEFAULT TRUE
+);
+CREATE INDEX idx_cmcc_mcc ON cmcc(mcc);
+
+-- Tabla de Comercios (Merchants)
+CREATE TABLE cmerchants (
+    id SERIAL PRIMARY KEY,
+    mid VARCHAR(15) UNIQUE NOT NULL,
+    nombre_comercial VARCHAR(255),
+    pais VARCHAR(3),
+    ciudad VARCHAR(100),
+    mcc VARCHAR(4),
+    riesgo_nivel VARCHAR(10) DEFAULT 'MEDIO',
+    permitido BOOLEAN DEFAULT TRUE,
+    FOREIGN KEY (mcc) REFERENCES cmcc(mcc)
+);
+CREATE INDEX idx_cmerchants_mid ON cmerchants(mid);
+CREATE INDEX idx_cmerchants_mcc ON cmerchants(mcc);
 
 -- Tabla de Transacciones (ISO 8583 + Resultados de Fraude)
 CREATE TABLE ctransactions (
@@ -129,117 +156,4 @@ INSERT INTO ccurrencies (code_numeric, code_alpha, name, decimals) VALUES
 -- Insertar Clientes
 INSERT INTO ccustomers (customer_ref_id, first_name, last_name, email, document_id) VALUES
 ('CL-123456', 'Juan', 'Pérez', 'juan.perez@email.com', '001-1234567-8'),
-('CL-789012', 'Maria', 'Gomez', 'maria.gomez@email.com', '001-9876543-2');
-
--- Insertar Cuentas (vinculadas a clientes)
-INSERT INTO caccounts (account_number, account_type, currency_code, customer_id) VALUES
-('100020003000', 'Ahorros', 'DOP', (SELECT id FROM ccustomers WHERE customer_ref_id = 'CL-123456')),
-('400050006000', 'Corriente', 'USD', (SELECT id FROM ccustomers WHERE customer_ref_id = 'CL-123456')),
-('700080009000', 'Ahorros', 'DOP', (SELECT id FROM ccustomers WHERE customer_ref_id = 'CL-789012'));
-
--- Insertar Tarjetas (vinculadas a cuentas)
--- Usamos el PAN del ejemplo de cURL
-INSERT INTO ccardx (pan, pan_last_4, pan_bin, expiry_date, card_type, brand, status, account_id) VALUES
-('4000123456789012', '9012', '400012', '1228', 'Débito', 'Visa', 'active', (SELECT id FROM caccounts WHERE account_number = '400050006000')),
-('5100123456780001', '0001', '510012', '0627', 'Crédito', 'Mastercard', 'active', (SELECT id FROM caccounts WHERE account_number = '700080009000'));
-
--- Insertar Transacciones (Simulando que ya fueron analizadas por la API)
-
--- Transacción 1: Normal (del cURL ejemplo 1) - Analizada como BAJO RIESGO
--- $150.50 USD a las 13:09
-INSERT INTO ctransactions (
-    card_id, mti, i_0002_pan, i_0003_processing_code, i_0004_amount_transaction,
-    i_0007_transmission_datetime, i_0011_stan, i_0012_time_local, i_0013_date_local,
-    i_0022_pos_entry_mode, i_0024_function_code_nii, i_0025_pos_condition_code,
-    i_0032_acquiring_inst_id, i_0041_card_acceptor_tid, i_0042_card_acceptor_mid,
-    i_0043_card_acceptor_name_loc, i_0049_currency_code_tx,
-    -- Resultados del Análisis
-    es_fraude, probabilidad_fraude, nivel_riesgo, factores_riesgo,
-    mensaje_analisis, recomendacion_analisis, analisis_timestamp, monto_dop_calculado
-) VALUES (
-    (SELECT id FROM ccardx WHERE pan = '4000123456789012'), '0100', '4000123456789012', '000000', '000000015050',
-    '1114130930', '123456', '130930', '1114',
-    '051', '200', '00',
-    '123456', 'TERM0001', 'MERCHANT1234567',
-    'Mi Tienda, Santo Domingo, DO', '840',
-    -- Resultados Ficticios
-    FALSE, 0.15, 'BAJO', '',
-    'Transacción dentro de parámetros normales', 'Recomendación: Transacción aprobada automáticamente',
-    CURRENT_TIMESTAMP - INTERVAL '1 day', 8877.75
-);
-
--- Transacción 2: Alto Riesgo (del cURL ejemplo 2) - Analizada como ALTO RIESGO
--- $1000.00 USD a las 03:05 en Venezuela
-INSERT INTO ctransactions (
-    card_id, mti, i_0002_pan, i_0003_processing_code, i_0004_amount_transaction,
-    i_0007_transmission_datetime, i_0011_stan, i_0012_time_local, i_0013_date_local,
-    i_0022_pos_entry_mode, i_0024_function_code_nii, i_0025_pos_condition_code,
-    i_0032_acquiring_inst_id, i_0041_card_acceptor_tid, i_0042_card_acceptor_mid,
-    i_0043_card_acceptor_name_loc, i_0049_currency_code_tx,
-    -- Resultados del Análisis
-    es_fraude, probabilidad_fraude, nivel_riesgo, factores_riesgo,
-    mensaje_analisis, recomendacion_analisis, analisis_timestamp, monto_dop_calculado
-) VALUES (
-    (SELECT id FROM ccardx WHERE pan = '4000123456789012'), '0100', '4000123456789012', '000000', '000000100000',
-    '1114030510', '123457', '030510', '1114',
-    '051', '200', '00',
-    '987654', 'TERM0002', 'MERCHANT9876543',
-    'Hotel Caracas, VE', '840',
-    -- Resultados Ficticios
-    TRUE, 0.85, 'ALTO', 'MONTO_ELEVADO,HORARIO_NOCTURNO,PAIS_ALTO_RIESGO,TRANSACCION_DIVISA,DIVISA_MONTO_ELEVADO',
-    'ALERTA: Transacción identificada como fraudulenta por modelo ML y reglas de negocio', 
-    'Recomendación: Revisar transacción manualmente y contactar al cliente',
-    CURRENT_TIMESTAMP - INTERVAL '1 hour', 59000.00
-);
-
--- Transacción 3: Tarjeta desconocida (No está en ccardx) - Analizada como ALTO RIESGO
--- $5000.00 DOP a las 02:15
-INSERT INTO ctransactions (
-    card_id, mti, i_0002_pan, i_0003_processing_code, i_0004_amount_transaction,
-    i_0007_transmission_datetime, i_0011_stan, i_0012_time_local, i_0013_date_local,
-    i_0022_pos_entry_mode, i_0024_function_code_nii, i_0025_pos_condition_code,
-    i_0032_acquiring_inst_id, i_0041_card_acceptor_tid, i_0042_card_acceptor_mid,
-    i_0043_card_acceptor_name_loc, i_0049_currency_code_tx,
-    -- Resultados del Análisis
-    es_fraude, probabilidad_fraude, nivel_riesgo, factores_riesgo,
-    mensaje_analisis, recomendacion_analisis, analisis_timestamp, monto_dop_calculado
-) VALUES (
-    NULL, '0100', '9999000011112222', '000000', '00000000500000', -- PAN 9999... no existe, $5000.00 DOP
-    '1114021530', '555444', '021530', '1114',
-    '021', '200', '00',
-    '111222', 'TERM0003', 'MERCHANT333444',
-    'Colmado Don Jose, Santo Domingo, DO', '214', -- 214 = DOP
-    -- Resultados Ficticios
-    TRUE, 0.70, 'ALTO', 'MONTO_ELEVADO,HORARIO_NOCTURNO,MONTO_ALTO_HORARIO_SOSPECHOSO',
-    'ALERTA: Múltiples factores de riesgo identificados', 
-    'Recomendación: Revisar transacción manualmente y contactar al cliente',
-    CURRENT_TIMESTAMP - INTERVAL '30 minutes', 5000.00
-);
-
-
--- Verificar la inserción de datos
-SELECT 'ccurrencies' as tabla, COUNT(*) FROM ccurrencies
-UNION ALL
-SELECT 'ccustomers', COUNT(*) FROM ccustomers
-UNION ALL
-SELECT 'caccounts', COUNT(*) FROM caccounts
-UNION ALL
-SELECT 'ccardx', COUNT(*) FROM ccardx
-UNION ALL
-SELECT 'ctransactions', COUNT(*) FROM ctransactions;
-
--- Ver las transacciones con sus resultados
-SELECT 
-    t.id, 
-    t.i_0002_pan, 
-    t.i_0004_amount_transaction, 
-    t.i_0049_currency_code_tx,
-    t.nivel_riesgo, 
-    t.es_fraude,
-    t.factores_riesgo,
-    c.customer_ref_id
-FROM ctransactions t
-LEFT JOIN ccardx cx ON t.card_id = cx.id
-LEFT JOIN caccounts a ON cx.account_id = a.id
-LEFT JOIN ccustomers c ON a.customer_id = c.id
-ORDER BY t.tx_timestamp_utc DESC;
+('CL-789012', 'Maria', 'Gomez', 'maria.gome
