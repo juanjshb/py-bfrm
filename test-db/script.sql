@@ -156,4 +156,128 @@ INSERT INTO ccurrencies (code_numeric, code_alpha, name, decimals) VALUES
 -- Insertar Clientes
 INSERT INTO ccustomers (customer_ref_id, first_name, last_name, email, document_id) VALUES
 ('CL-123456', 'Juan', 'Pérez', 'juan.perez@email.com', '001-1234567-8'),
-('CL-789012', 'Maria', 'Gomez', 'maria.gome
+('CL-789012', 'Maria', 'Gomez', 'maria.gomez@email.com', '001-9876543-2');
+
+-- Insertar Cuentas (vinculadas a clientes)
+INSERT INTO caccounts (account_number, account_type, currency_code, customer_id) VALUES
+('100020003000', 'Ahorros', 'DOP', (SELECT id FROM ccustomers WHERE customer_ref_id = 'CL-123456')),
+('400050006000', 'Corriente', 'USD', (SELECT id FROM ccustomers WHERE customer_ref_id = 'CL-123456')),
+('700080009000', 'Ahorros', 'DOP', (SELECT id FROM ccustomers WHERE customer_ref_id = 'CL-789012'));
+
+-- Insertar Tarjetas (vinculadas a cuentas)
+INSERT INTO ccardx (pan, pan_last_4, pan_bin, expiry_date, card_type, brand, status, account_id) VALUES
+('4000123456789012', '9012', '400012', '1228', 'Débito', 'Visa', 'active', (SELECT id FROM caccounts WHERE account_number = '400050006000')),
+('5100123456780001', '0001', '510012', '0627', 'Crédito', 'Mastercard', 'active', (SELECT id FROM caccounts WHERE account_number = '700080009000'));
+
+-- Insertar MCC de prueba
+INSERT INTO cmcc (mcc, descripcion, riesgo_nivel, permitido) VALUES
+('5411', 'Supermercados', 'BAJO', TRUE),
+('5812', 'Restaurantes', 'MEDIO', TRUE),
+('7011', 'Hoteles', 'MEDIO', TRUE),
+('7995', 'Apuestas', 'ALTO', FALSE);
+
+-- Insertar Merchants de prueba
+INSERT INTO cmerchants (mid, nombre_comercial, pais, ciudad, mcc, riesgo_nivel, permitido) VALUES
+('MERCHANT1234567', 'Mi Tienda, Santo Domingo', 'DO', 'Santo Domingo', '5411', 'BAJO', TRUE),
+('MERCHANT9876543', 'Hotel Caracas', 'VE', 'Caracas', '7011', 'MEDIO', TRUE),
+('MERCHANT333444', 'Colmado Don Jose', 'DO', 'Santo Domingo', '5411', 'BAJO', TRUE),
+('MERCHANT_RIESGO', 'Casino XYZ', 'DO', 'Santo Domingo', '7995', 'ALTO', FALSE);
+
+-- Insertar Transacciones (Simulando que ya fueron analizadas por la API)
+
+-- Transacción 1: Normal - BAJO RIESGO
+INSERT INTO ctransactions (
+    card_id, mti, i_0002_pan, i_0003_processing_code, i_0004_amount_transaction,
+    i_0007_transmission_datetime, i_0011_stan, i_0012_time_local, i_0013_date_local,
+    i_0022_pos_entry_mode, i_0024_function_code_nii, i_0025_pos_condition_code,
+    i_0032_acquiring_inst_id, i_0041_card_acceptor_tid, i_0042_card_acceptor_mid,
+    i_0043_card_acceptor_name_loc, i_0049_currency_code_tx,
+    es_fraude, probabilidad_fraude, nivel_riesgo, factores_riesgo,
+    mensaje_analisis, recomendacion_analisis, analisis_timestamp, monto_dop_calculado
+) VALUES (
+    (SELECT id FROM ccardx WHERE pan = '4000123456789012'), '0100', '4000123456789012', '000000', '000000015050',
+    '1114130930', '123456', '130930', '1114',
+    '051', '200', '00',
+    '123456', 'TERM0001', 'MERCHANT1234567',
+    'Mi Tienda, Santo Domingo, DO', '840',
+    FALSE, 0.15, 'BAJO', '',
+    'Transacción dentro de parámetros normales', 'Recomendación: Transacción aprobada automáticamente',
+    CURRENT_TIMESTAMP - INTERVAL '1 day', 8877.75
+);
+
+-- Transacción 2: Alto Riesgo - USD en VE de madrugada
+INSERT INTO ctransactions (
+    card_id, mti, i_0002_pan, i_0003_processing_code, i_0004_amount_transaction,
+    i_0007_transmission_datetime, i_0011_stan, i_0012_time_local, i_0013_date_local,
+    i_0022_pos_entry_mode, i_0024_function_code_nii, i_0025_pos_condition_code,
+    i_0032_acquiring_inst_id, i_0041_card_acceptor_tid, i_0042_card_acceptor_mid,
+    i_0043_card_acceptor_name_loc, i_0049_currency_code_tx,
+    es_fraude, probabilidad_fraude, nivel_riesgo, factores_riesgo,
+    mensaje_analisis, recomendacion_analisis, analisis_timestamp, monto_dop_calculado
+) VALUES (
+    (SELECT id FROM ccardx WHERE pan = '4000123456789012'), '0100', '4000123456789012', '000000', '000000100000',
+    '1114030510', '123457', '030510', '1114',
+    '051', '200', '00',
+    '987654', 'TERM0002', 'MERCHANT9876543',
+    'Hotel Caracas, VE', '840',
+    TRUE, 0.85, 'ALTO', 'MONTO_ELEVADO,HORARIO_NOCTURNO,PAIS_ALTO_RIESGO,TRANSACCION_DIVISA,DIVISA_MONTO_ELEVADO',
+    'ALERTA: Transacción identificada como fraudulenta por modelo ML y reglas de negocio', 
+    'Recomendación: Revisar transacción manualmente y contactar al cliente',
+    CURRENT_TIMESTAMP - INTERVAL '1 hour', 59000.00
+);
+
+-- Transacción 3: Tarjeta desconocida - ALTO RIESGO
+INSERT INTO ctransactions (
+    card_id, mti, i_0002_pan, i_0003_processing_code, i_0004_amount_transaction,
+    i_0007_transmission_datetime, i_0011_stan, i_0012_time_local, i_0013_date_local,
+    i_0022_pos_entry_mode, i_0024_function_code_nii, i_0025_pos_condition_code,
+    i_0032_acquiring_inst_id, i_0041_card_acceptor_tid, i_0042_card_acceptor_mid,
+    i_0043_card_acceptor_name_loc, i_0049_currency_code_tx,
+    es_fraude, probabilidad_fraude, nivel_riesgo, factores_riesgo,
+    mensaje_analisis, recomendacion_analisis, analisis_timestamp, monto_dop_calculado
+) VALUES (
+    NULL, '0100', '9999000011112222', '000000', '00000000500000',
+    '1114021530', '555444', '021530', '1114',
+    '021', '200', '00',
+    '111222', 'TERM0003', 'MERCHANT333444',
+    'Colmado Don Jose, Santo Domingo, DO', '214',
+    TRUE, 0.70, 'ALTO', 'MONTO_ELEVADO,HORARIO_NOCTURNO,MONTO_ALTO_HORARIO_SOSPECHOSO',
+    'ALERTA: Múltiples factores de riesgo identificados', 
+    'Recomendación: Revisar transacción manualmente y contactar al cliente',
+    CURRENT_TIMESTAMP - INTERVAL '30 minutes', 5000.00
+);
+
+-----------------------------------------
+-- SECCIÓN 3: CONSULTAS DE VERIFICACIÓN
+-----------------------------------------
+
+-- Conteo rápido
+SELECT 'ccurrencies' as tabla, COUNT(*) FROM ccurrencies
+UNION ALL
+SELECT 'ccustomers', COUNT(*) FROM ccustomers
+UNION ALL
+SELECT 'caccounts', COUNT(*) FROM caccounts
+UNION ALL
+SELECT 'ccardx', COUNT(*) FROM ccardx
+UNION ALL
+SELECT 'cmcc', COUNT(*) FROM cmcc
+UNION ALL
+SELECT 'cmerchants', COUNT(*) FROM cmerchants
+UNION ALL
+SELECT 'ctransactions', COUNT(*) FROM ctransactions;
+
+-- Ver las transacciones con sus resultados
+SELECT 
+    t.id, 
+    t.i_0002_pan, 
+    t.i_0004_amount_transaction, 
+    t.i_0049_currency_code_tx,
+    t.nivel_riesgo, 
+    t.es_fraude,
+    t.factores_riesgo,
+    c.customer_ref_id
+FROM ctransactions t
+LEFT JOIN ccardx cx ON t.card_id = cx.id
+LEFT JOIN caccounts a ON cx.account_id = a.id
+LEFT JOIN ccustomers c ON a.customer_id = c.id
+ORDER BY t.tx_timestamp_utc DESC;
