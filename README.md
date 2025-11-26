@@ -1,10 +1,4 @@
-Aquí tienes un `readme.md` actualizado a la **Versión 3.0**, que incorpora la base de datos PostgreSQL, el procesamiento de transacciones ISO 8583 y el rate-limiting con Redis.
-
------
-
 # 🛡️ API de Detección de Fraude Bancario v3.0
-
-## Plataforma de Análisis ISO 8583 con Base de Datos
 
 Sistema integral para la detección, análisis y auditoría de fraude en transacciones bancarias. Esta versión evoluciona de una simple API de predicción a una plataforma robusta con persistencia de datos, capaz de procesar formatos de transacción estándar de la industria como **ISO 8583**.
 
@@ -16,6 +10,7 @@ Combina Machine Learning (Isolation Forest), reglas de negocio específicas para
 
 Esta versión introduce una arquitectura completamente nueva orientada a la persistencia y el procesamiento de nivel empresarial:
 
+  * **Seguridad Mejorada:** Incluye un comunicacion HTTPS (TLS) y auto-carga del certificado para el proceso de renovacion.
   * **Integración con PostgreSQL:** Todas las transacciones analizadas y sus resultados de fraude se almacenan en una base de datos relacional.
   * **Procesamiento ISO 8583:** Nuevo endpoint (`/analizar-iso`) que acepta transacciones en un formato JSON basado en el estándar ISO 8583.
   * **Persistencia y Auditoría:** La tabla `ctransactions` guarda una copia de la transacción entrante *junto con* el veredicto del modelo (fraude, riesgo, factores, etc.), creando un registro de auditoría completo.
@@ -41,10 +36,25 @@ Esta versión introduce una arquitectura completamente nueva orientada a la pers
 
 -----
 
+### Factores de Riesgo
+
+| Factor | Descripción | Puntaje | Moneda |
+|--------|-------------|---------|---------|
+| `MONTO_ELEVADO` | Transacciones > $10,000 DOP | +2 | Todas |
+| `MONTO_MUY_BAJO` | Transacciones < $50 DOP | +1 | Todas |
+| `TRANSACCION_DIVISA` | Operación en USD/EUR | +1 | USD/EUR |
+| `DIVISA_MONTO_ELEVADO` | Divisa + monto > $15,000 DOP | +2 | USD/EUR |
+| `HORARIO_NOCTURNO` | Entre 12am-6am | +1 | Todas |
+| `PAIS_ALTO_RIESGO` | Venezuela, Haití | +2 | Todas |
+| `PAIS_RIESGO_MEDIO` | Países no DO/US | +1 | Todas |
+| `MONTO_ALTO_HORARIO_SOSPECHOSO` | Combo monto alto + horario nocturno | +2 | Todas |
+
+-----
+
 ## 🔧 Arquitectura del Proyecto (v3)
 
 ```
-fraude_api_v3/
+v3/
 │
 ├── main.py                 # API FastAPI: Endpoints (/analizar-iso, /health), DB, Redis
 ├── detector.py             # Lógica ML (Isolation Forest) y conversión de tasas (BHD)
@@ -96,7 +106,20 @@ Asegúrate de tener PostgreSQL y Redis instalados y ejecutándose.
     pip install -r requirements.txt
     ```
 
-### 3\. Ejecutar el Servidor
+### 3\. Generar los Certificados
+
+Abre tu terminal en la raíz del proyecto y ejecuta el siguiente comando (requiere `openssl`, que usualmente viene instalado en Linux, macOS y Git Bash en Windows):
+
+```bash
+openssl req -x509 -newkey rsa:4096 -nodes -keyout key.pem -out cert.pem -days 365 -subj "/CN=localhost"
+```
+
+  * Esto creará dos archivos en tu carpeta: `key.pem` (tu llave privada) y `cert.pem` (tu certificado público), válidos por 365 días para `localhost` copialos en la carpeta `ssl` o la que tengas preseterminada.
+
+  **Nota: Estos certificados son self-signed o firmados por el mismo equipo en caso de que tengas un proveedor solo has tu proceso y copia los archivos en tu carperta del servidor**
+
+
+### 4\. Ejecutar el Servidor
 
 ```bash
 # Usando el script de inicio (recomendado)
@@ -106,7 +129,7 @@ python run_server.py
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-**Acceder a la documentación interactiva:** http://localhost:8000/docs
+**Acceder a la documentación interactiva:** https://localhost:8000/docs
 
 -----
 
@@ -215,12 +238,14 @@ Verifica el estado del servicio. Respuesta de ejemplo:
 
 ## 🔒 Recomendaciones para Producción
 
-  * **Migraciones de DB:** Usar **Alembic** para gestionar los cambios en el esquema de la base de datos de forma controlada.
   * **Variables de Entorno:** No quemar credenciales. Usar `.env` (como está implementado con `pydantic-settings`) o secretos de orquestación (Kubernetes Secrets, etc.).
-  * **Seguridad:** Implementar HTTPS (TLS), autenticación de API (ej. JWT u OAuth2) y firewalls de red.
+  * **Seguridad:** Autenticación de API (ej. JWT u OAuth2) y firewalls de red.
   * **Pruebas:** Añadir un set de pruebas unitarias e de integración (`pytest`) para `detector.py` y los endpoints de `main.py`.
   * **Contenerización:** Empaquetar la aplicación usando Docker y Docker Compose para gestionar los servicios (API, Postgres, Redis).
-
+  * **Reglas de negocio:** Mejorar las reglas de negocio, segun tu negocio.
+  * **Historial de transacciones del cliente:** Considerar el historial de transacciones de ese cliente para detectar anomalias y alertas; todas sus tarjetas.
+  * **Factor de riesgo y reglas:** Hacer que el factor de riesgo este en la base de datos. 
+  *  **UI y Reportes** Agregar UI para poder crear reglas y parametrizacion de forma User-friendly; Ademas de generacion de reportes
 -----
 
 ## ⚖️ Aviso Legal y Cumplimiento
@@ -229,4 +254,15 @@ Este sistema está diseñado como una herramienta de soporte a la decisión para
 
   * **Anonimización:** Los IDs de cliente se anonimizan con SHA-256 antes de ser expuestos en la respuesta.
   * **Trazabilidad:** La base de datos `ctransactions` provee la trazabilidad completa requerida por la SIB.
+
   * **Uso de Tasas:** La integración con el BHD es para fines demostrativos. En un entorno real, se debe usar la API de tasas oficial de la institución o del Banco Central.
+
+
+**Versión:** 3.0.0  
+**Última actualización:** Noviembre 2025
+
+
+
+
+
+
