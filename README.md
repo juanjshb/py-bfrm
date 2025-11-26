@@ -13,6 +13,8 @@ Incluye:
 * Arquitectura asíncrona (SQLAlchemy Async).
 * Logging estructurado.
 * Modelo de transacción inspirado en ISO8583.
+* Modelo de pais inspirado en ISO 3166.
+* Modelo de moneda inspirado en ISO 4217.
 * Evaluación histórico del cliente (24h / 7 días).
 
 Este servicio está diseñado como componente central para ecosistemas antifraude o motores AML dentro de plataformas financieras o sistemas transaccionales.
@@ -37,16 +39,39 @@ Este servicio está diseñado como componente central para ecosistemas antifraud
 ## 🗂 **3. Estructura de Carpetas**
 
 ```txt
-app/
- ├── infra/
- │    └── detectors/
- │           └── tasas.py
- ├── models/
- ├── database.py
- ├── detector.py
- ├── db_models.py
- ├── main.py
- └── utils/
+FRAUDE/
+│
+├── app/
+│   ├── api/
+│   │   └── v1/
+│   │       ├── endpoints/
+│   │       └── router.py
+│   │
+│   ├── core/
+│   ├── domain/
+│   │   ├── entities/
+│   │   └── services/
+│   │
+│   ├── infra/
+│   │   ├── cache/
+│   │   ├── db/
+│   │   │   ├── models/
+│   │   │   ├── base.py
+│   │   │   └── session.py
+│   │   ├── detectors/
+│   │   └── schemas/
+│   │
+│   ├── main.py
+│   ├── audits/
+│   ├── scripts/
+│   ├── sql/
+│   ├── ssl/
+│   └── tests/
+│
+├── readme.md
+├── requirements.txt
+└── run_server.py
+
 ```
 
 ---
@@ -72,7 +97,7 @@ app/
 ### 1. Clonar el repositorio
 
 ```bash
-git clone https://github.com/tu-org/fraude-api.git
+git clone https://github.com/juanjshb/py-bfrm.git
 cd fraude-api
 ```
 
@@ -114,30 +139,38 @@ Si no se encuentran certificados SSL, el servicio inicia en HTTP y lo registra e
 ### 📍 Health Check
 
 ```
-GET /health
+GET /api/v1/health
 ```
 
 ### 📍 Obtener tasas BHD (cacheadas)
 
 ```
-GET /tasas
+GET /exchange-rate
 ```
 
 ### 📍 Procesar transacción ISO8583 / antifraude
 
 ```
-POST /transaccion
+POST /api/v1/analizar-iso-trnx
 ```
 
 Ejemplo de body:
 
 ```json
 {
-  "customer_id": 1234,
-  "monto": 1500.50,
-  "currency": "DOP",
-  "merchant": "AMZN",
-  "timestamp": "2025-11-26T16:40:00"
+  "mti": "0200",
+  "bitmap": "F23C448128A08010",
+  "i_0002_pan": "4000123456789012",
+  "i_0003_processing_code": "000000",
+  "i_0004_amount_transaction": "000000020000",
+  "i_0007_transmission_datetime": "1124173045",
+  "i_0011_stan": "123456",
+  "i_0012_time_local": "103045",
+  "i_0013_date_local": "1126",
+  "i_0019_acq_country_code": "DO",
+  "i_0041_card_acceptor_tid": "T1234567",
+  "i_0042_card_acceptor_mid": "9988776655",
+  "i_0049_currency_code_tx": "840"
 }
 ```
 
@@ -145,9 +178,32 @@ Respuesta:
 
 ```json
 {
-  "riesgo": "medio",
-  "motivos": ["frecuencia_alta_24h"],
-  "aprobada": true
+    "fraude_detectado": false,
+    "probabilidad_fraude": 0.5989,
+    "nivel_riesgo": "BAJO",
+    "factores_riesgo": [
+        "TRANSACCION_DIVISA",
+        "DIVISA_MONTO_ELEVADO"
+    ],
+    "mensaje": "Transacción dentro de patrones normales.",
+    "recomendacion": "Aprobada automáticamente.",
+    "cliente_hash": "anon",
+    "score_anomalia": 0.005730719504814741,
+    "timestamp": "2025-11-26T14:09:51.476702Z",
+    "datos_analizados": {
+        "monto_dop": 12800.0,
+        "currency_tx": "840",
+        "hora_local": "103045"
+    },
+    "conversion_moneda": {
+        "monto_original": 200.0,
+        "moneda_original": "USD",
+        "monto_dop": 12800.0,
+        "tasa_aplicada": 64.0,
+        "tipo_tasa": "venta",
+        "conversion_requerida": true
+    },
+    "transaction_db_id": 32
 }
 ```
 
@@ -249,4 +305,5 @@ Sin agregar inventos, únicamente lo que aplica a tu API actual:
 ## 📄 **14. Licencia**
 
 MIT / Privado (dependiendo del repositorio final).
+
 
