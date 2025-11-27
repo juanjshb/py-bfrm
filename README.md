@@ -2,7 +2,7 @@
 
 ---
 
-## 📌 **1. Descripción del Proyecto**
+## **1. Descripción del Proyecto**
 
 La **Fraud / AML API** es un servicio backend desarrollado con **FastAPI** para ejecutar validaciones de fraude, análisis de comportamiento transaccional y cumplimiento AML en tiempo real.
 Incluye:
@@ -21,7 +21,7 @@ Este servicio está diseñado como componente central para ecosistemas antifraud
 
 ---
 
-## 🧱 **2. Arquitectura General del Sistema**
+## **2. Arquitectura General del Sistema**
 
 ### Componentes principales
 
@@ -36,7 +36,7 @@ Este servicio está diseñado como componente central para ecosistemas antifraud
 
 ---
 
-## 🗂 **3. Estructura de Carpetas**
+## **3. Estructura de Carpetas**
 
 ```txt
 FRAUDE/
@@ -76,7 +76,7 @@ FRAUDE/
 
 ---
 
-## ⚙️ **4. Requisitos Previos**
+## **4. Requisitos Previos**
 
 * Python 3.11+
 * PostgreSQL o SQL Server compatible con SQLAlchemy Async
@@ -92,7 +92,7 @@ FRAUDE/
 
 ---
 
-## 🔧 **5. Configuración e Instalación**
+## **5. Configuración e Instalación**
 
 ### 1. Clonar el repositorio
 
@@ -122,7 +122,7 @@ TASAS_TIMEOUT_MINUTES=30
 
 ---
 
-## 🚀 **6. Ejecución del Servidor**
+## **6. Ejecución del Servidor**
 
 ### Modo desarrollo
 
@@ -134,21 +134,21 @@ Si no se encuentran certificados SSL, el servicio inicia en HTTP y lo registra e
 
 ---
 
-## 📡 **7. Endpoints del Sistema**
+## **7. Endpoints del Sistema**
 
-### 📍 Health Check
+### Health Check
 
 ```
 GET /api/v1/health
 ```
 
-### 📍 Obtener tasas BHD (cacheadas)
+### Obtener tasas BHD (cacheadas)
 
 ```
 GET /exchange-rate
 ```
 
-### 📍 Procesar transacción ISO8583 / antifraude
+### Procesar transacción ISO8583 / antifraude
 
 ```
 POST /api/v1/analizar-iso-trnx
@@ -209,7 +209,7 @@ Respuesta:
 
 ---
 
-## 🧠 **8. Lógica del Detector AML / Fraude**
+## **8. Lógica del Detector AML / Fraude**
 
 ### Factores evaluados
 
@@ -229,7 +229,7 @@ Respuesta:
 
 ---
 
-## 🔐 **9. Rate Limiting**
+## **9. Rate Limiting**
 
 Implementado con **SlowAPI**:
 
@@ -245,7 +245,7 @@ Políticas configurables:
 
 ---
 
-## 🗄 **10. Base de Datos (SQLAlchemy Async)**
+## **10. Base de Datos (SQLAlchemy Async)**
 
 ### Ejemplo de modelo:
 
@@ -267,7 +267,7 @@ class Transaccion(Base):
 
 ---
 
-## 📊 **11. Logging**
+## **11. Logging**
 
 * Nivel INFO por defecto
 * Logs de:
@@ -279,7 +279,7 @@ class Transaccion(Base):
 
 ---
 
-## 🧭 **12. Roadmap Sugerido**
+## **12. Roadmap Sugerido**
 
 | Fase                   | Descripción                             |
 | ---------------------- | --------------------------------------- |
@@ -291,7 +291,7 @@ class Transaccion(Base):
 
 ---
 
-## 🏦 **13. Consideraciones AML / Compliance**
+## **13. Consideraciones AML / Compliance**
 
 Sin agregar inventos, únicamente lo que aplica a tu API actual:
 
@@ -302,8 +302,9 @@ Sin agregar inventos, únicamente lo que aplica a tu API actual:
 
 ---
 
-## 📄 **14. Licencia**
+## **14. Licencia**
 
 MIT / Privado (dependiendo del repositorio final).
+
 
 
