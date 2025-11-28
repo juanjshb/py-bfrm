@@ -10,9 +10,9 @@ class Account(Base):
 
     id = Column(Integer, primary_key=True)
     customer_id = Column(Integer, ForeignKey("ccustomers.id"), nullable=False)
-    numero_cuenta = Column(String(30), unique=True, nullable=False)
-    tipo_cuenta = Column(String(20), nullable=False, default="AHORROS")
-    creado_en = Column(DateTime, server_default=func.now())
+    account_number = Column(String(30), unique=True, nullable=False)
+    account_type = Column(String(20), nullable=False, default="AHORROS")
+    opened_at = Column(DateTime, server_default=func.now())
 
     customer = relationship("Customer", back_populates="accounts")
     cards = relationship("Card", back_populates="account")

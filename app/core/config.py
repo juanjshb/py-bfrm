@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     SSL_KEYFILE: str | None = "ssl/key.pem"
     SSL_CERTFILE: str | None = "ssl/cert.pem"
 
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

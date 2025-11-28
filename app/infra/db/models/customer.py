@@ -10,8 +10,9 @@ class Customer(Base):
 
     id = Column(Integer, primary_key=True)
     document_id = Column(String(30), unique=True, nullable=False)
-    nombre = Column(String(100), nullable=False)
-    pais = Column(String(2), default="DO")
-    creado_en = Column(DateTime, server_default=func.now())
+    first_name = Column(String(100), nullable=False)
+    last_name = Column(String(100), nullable=False)
+    #pais = Column(String(2), default="DO")
+    created_at = Column(DateTime, server_default=func.now())
 
     accounts = relationship("Account", back_populates="customer")

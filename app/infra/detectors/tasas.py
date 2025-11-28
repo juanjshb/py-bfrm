@@ -26,14 +26,14 @@ def obtener_tasas_cambio() -> Optional[Dict[str, float]]:
         and (datetime.now() - _TASAS_CACHE["timestamp"]).total_seconds()
         < _TASAS_CACHE["timeout_minutes"] * 60
     ):
-        logger.info("✅ Usando tasas de cambio en cache")
+        logger.info("Usando tasas de cambio en cache")
         return _TASAS_CACHE["tasas"]
 
     # -----------------------------
     # 2. Consumir API del BHD
     # -----------------------------
     try:
-        logger.info("🔄 Actualizando tasas de cambio desde BHD...")
+        logger.info("Actualizando tasas de cambio desde BHD...")
         url = "https://backend.bhd.com.do/api/modal-cambio-rate?populate=deep"
         r = requests.get(url, timeout=10)
         r.raise_for_status()
@@ -61,7 +61,7 @@ def obtener_tasas_cambio() -> Optional[Dict[str, float]]:
         _TASAS_CACHE["tasas"] = tasas
         _TASAS_CACHE["timestamp"] = datetime.now()
 
-        logger.info(f"📈 Tasas actualizadas: {tasas}")
+        logger.info(f"Tasas actualizadas: {tasas}")
         return tasas
 
     except Exception as e:

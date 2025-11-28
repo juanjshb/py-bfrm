@@ -29,6 +29,6 @@ def convertir_monto(
             "moneda_original": moneda,
             "monto_dop": monto,
             "tasa_aplicada": 1.0,
-            "tipo_tasa": "sin_tasas",
+            "tipo_tasa": "NONE",
             "conversion_requerida": False,
         }

@@ -454,15 +454,16 @@ class ISO8583Transaction(BaseModel):
 
 
 class TransaccionResponse(BaseModel):
-    fraude_detectado: bool
-    probabilidad_fraude: float
-    nivel_riesgo: str
-    factores_riesgo: List[str]
-    mensaje: str
-    recomendacion: str
-    cliente_hash: str
-    score_anomalia: float
+    is_fraud: bool
+    fraud_prob: float
+    risk_level: str
+    risk_factor: List[str]
+    message: str
+    advice: str
+    customer_hash: str
+    anomaly_score: float
     timestamp: str
-    datos_analizados: Dict
-    conversion_moneda: Optional[Dict] = None
-    transaction_db_id: Optional[int] = None
+    data_analyzed: Dict
+    exchange: Optional[Dict] = None
+    ofac: Optional[Dict] = None
+    trnx_db_id: Optional[int] = None
